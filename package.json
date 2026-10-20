@@ -1,0 +1,13 @@
+{
+  "name": "emperors-great-battle",
+  "version": "1.0.0",
+  "description": "Emperor's Great Battle - Real-time 1v1 Multiplayer Web Game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}
