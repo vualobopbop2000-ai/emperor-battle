@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emperor's Great Battle</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Babylon.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babylonjs/6.30.0/babylon.js"></script>
+    <!-- Socket.io Client -->
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0f172a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white; }
+        canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+        .screen { display: none; }
+        .screen.active { display: flex; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between select-none">
+
+    <!-- ================= 1. MÀN HÌNH NHẬP TÊN KHÁCH ================= -->
+    <div id="screen-login" class="screen active flex-col items-center justify-center h-full w-full bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-6">
+        <div class="bg-slate-800/80 p-8 rounded-2xl shadow-2xl border border-indigo-500/30 w-full max-w-md backdrop-blur-md text-center">
+            <h1 class="text-4xl font-black text-amber-400 tracking-wider mb-2 uppercase drop-shadow-md">Emperor's Great Battle</h1>
+            <p class="text-slate-400 text-sm mb-6">Trận chiến chiến thuật 1v1 Online mượt mà trên Web</p>
+            
+            <div class="space-y-4 text-left">
+                <div>
+                    <label class="block text-xs uppercase font-bold text-slate-300 mb-1">Tên Đại Tướng Khách</label>
+                    <input id="input-username" type="text" placeholder="Nhập tên hiển thị..." class="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl focus:outline-none focus:border-amber-400 text-white font-medium">
+                </div>
+                <button id="btn-save-name" class="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-bold rounded-xl shadow-lg transition transform active:scale-95 uppercase tracking-wide">
+                    Vào Sảnh Phòng
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 2. MÀN HÌNH DANH SÁCH PHÒNG ================= -->
+    <div id="screen-rooms" class="screen flex-col h-full w-full bg-slate-950 p-6">
+        <header class="flex justify-between items-center pb-4 border-b border-slate-800 mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-amber-400">Sảnh Chiến Trường Online</h2>
+                <p class="text-xs text-slate-400">Tài khoản: <span id="display-username" class="text-white font-semibold"></span> (Khách)</p>
+            </div>
+            <button id="btn-open-create-room" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-xl shadow-lg transition uppercase text-xs tracking-wider">
+                + Tạo Phòng Mới
+            </button>
+        </header>
+
+        <div class="mb-4 flex gap-4">
+            <input id="input-search-room" type="text" placeholder="🔍 Tìm kiếm tên phòng..." class="flex-1 px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl focus:outline-none focus:border-indigo-500 text-sm">
+        </div>
+
+        <div class="flex-1 overflow-y-auto space-y-3 pr-2" id="room-list-container">
+            <!-- Danh sách phòng render động từ Server -->
+        </div>
+    </div>
+
+    <!-- ================= 3. MÀN HÌNH TẠO PHÒNG ================= -->
+    <div id="screen-create-room" class="screen flex-col items-center justify-center h-full w-full bg-slate-950/90 absolute inset-0 backdrop-blur-sm z-50">
+        <div class="bg-slate-900 p-8 rounded-2xl border border-slate-800 w-full max-w-md shadow-2xl">
+            <h3 class="text-xl font-bold text-amber-400 mb-4 uppercase">Thiết Lập Phòng Đấu</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs uppercase font-bold text-slate-400 mb-1">Tên Phòng</label>
+                    <input id="input-room-name" type="text" placeholder="Ví dụ: Phòng Đại Chiến 1" class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:border-amber-400 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase font-bold text-slate-400 mb-1">Mật Khẩu Phòng (Tùy chọn)</label>
+                    <input id="input-room-pass" type="password" placeholder="Bỏ trống nếu công khai..." class="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:border-amber-400 focus:outline-none">
+                </div>
+                <div id="room-error-msg" class="text-red-500 text-xs font-semibold h-4"></div>
+                <div class="flex gap-3 pt-2">
+                    <button id="btn-cancel-create" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 font-bold rounded-xl text-xs uppercase">Hủy</button>
+                    <button id="btn-confirm-create" class="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs uppercase">Tạo Phòng</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 4. MÀN HÌNH TRẬN ĐẤU (BABYLON.JS + SOCKET.IO) ================= -->
+    <div id="screen-battle" class="screen flex-col h-full w-full relative">
+        <canvas id="renderCanvas" class="absolute inset-0 z-0"></canvas>
+
+        <!-- HUD Trên -->
+        <div class="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
+            <div class="bg-slate-900/80 backdrop-blur border border-slate-700/50 px-4 py-2 rounded-xl flex items-center gap-6 shadow-lg pointer-events-auto">
+                <div>
+                    <span class="text-xs text-slate-400 block uppercase">Vàng của bạn</span>
+                    <span id="hud-gold" class="text-2xl font-black text-amber-400">50 💰</span>
+                </div>
+                <div class="h-8 w-px bg-slate-700"></div>
+                <div>
+                    <span class="text-xs text-slate-400 block uppercase">Thu nhập</span>
+                    <span id="hud-gold-rate" class="text-sm font-bold text-emerald-400">1 vàng/s (+ Mỏ)</span>
+                </div>
+            </div>
+
+            <!-- Roll Buff Lotion -->
+            <div class="bg-slate-900/85 backdrop-blur border border-amber-500/40 p-3 rounded-xl flex items-center gap-4 shadow-xl pointer-events-auto">
+                <div class="text-right">
+                    <span class="text-xs font-bold text-amber-300 block uppercase">Buff Lotion</span>
+                    <span id="lotion-status" class="text-[11px] text-slate-300">Sẵn sàng Roll</span>
+                </div>
+                <button id="btn-roll-lotion" class="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 font-bold text-xs rounded-lg shadow uppercase transition transform active:scale-95 disabled:opacity-50">
+                    🎲 Roll Buff (15s)
+                </button>
+            </div>
+        </div>
+
+        <!-- HUD Dưới: Khay Thẻ Bài -->
+        <div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 w-full max-w-5xl px-4 pointer-events-none">
+            <div class="bg-slate-900/90 backdrop-blur border border-slate-700/60 p-3 rounded-2xl shadow-2xl flex justify-center gap-2 overflow-x-auto pointer-events-auto" id="unit-deck-container">
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= JAVASCRIPT CLIENT LOGIC ================= -->
+    <script>
+        const socket = io();
+
+        const gameState = {
+            username: "",
+            rooms: [],
+            currentRoomId: null,
+            myRole: null, // 'player1' hoặc 'player2'
+            gold: 50,
+            goldRate: 1,
+            minesCount: 0,
+            maxMines: 5,
+            lotionCooldown: 0
+        };
+
+        const UNIT_CONFIGS = {
+            mine: { name: "Mỏ Vàng", cost: 0, hp: 100, atk: 0, def: 2, speed: 0, atkSpeed: 0, desc: "+1s nhận 1 vàng (Tối đa 5 mỏ)", type: "building" },
+            vanguard: { name: "Tiên Phong", cost: 5, hp: 80, atk: 4, def: 4, speed: 4, atkSpeed: 5, desc: "Cận chiến tiêu chuẩn", type: "unit" },
+            archer: { name: "Cung Thủ", cost: 7, hp: 60, atk: 8, def: 2, speed: 3, atkSpeed: 7, desc: "Tầm xa", type: "unit" },
+            shield: { name: "Lính Khiên", cost: 7, hp: 160, atk: 2, def: 12, speed: 3, atkSpeed: 3, desc: "Đỡ đòn, giáp cao", type: "unit" },
+            mage: { name: "Pháp Sư", cost: 11, hp: 70, atk: 7, def: 2, speed: 3, atkSpeed: 5, desc: "AOE phun lửa + Đốt máu 4s", type: "unit" },
+            cavalry: { name: "Kỵ Binh", cost: 10, hp: 110, atk: 8, def: 5, speed: 6, atkSpeed: 5, desc: "Lướt thẳng gây sát thương", type: "unit" },
+            elephant: { name: "Voi Giáo", cost: 12, hp: 220, atk: 9, def: 7, speed: 6, atkSpeed: 6, desc: "Tầm đánh rộng hơn cận chiến", type: "unit" },
+            catapult: { name: "Máy Bắn Đá", cost: 14, hp: 90, atk: 15, def: 5, speed: 1, atkSpeed: 2, desc: "Tầm xa cực đại, AOE", type: "unit" },
+            general: { name: "Đại Tướng", cost: 15, hp: 350, atk: 2, def: 6, speed: 0, atkSpeed: 2, desc: "Cố định, mỗi 3s gọi 2 lính", type: "unit" }
+        };
+
+        function switchScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        // --- 1. Login ---
+        document.getElementById('btn-save-name').addEventListener('click', () => {
+            const nameInput = document.getElementById('input-username').value.trim();
+            if (!nameInput) return alert("Vui lòng nhập tên đại tướng!");
+            
+            gameState.username = nameInput;
+            document.getElementById('display-username').innerText = nameInput;
+            switchScreen('screen-rooms');
+        });
+
+        // --- 2. Sảnh Phòng & Socket Events ---
+        socket.on('update-room-list', (roomList) => {
+            gameState.rooms = roomList;
+            renderRoomList(document.getElementById('input-search-room').value);
+        });
+
+        function renderRoomList(filter = "") {
+            const container = document.getElementById('room-list-container');
+            container.innerHTML = "";
+            const filtered = gameState.rooms.filter(r => r.name.toLowerCase().includes(filter.toLowerCase()));
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="text-center text-slate-500 py-8">Chưa có phòng nào. Hãy bấm "Tạo Phòng Mới"!</div>`;
+                return;
+            }
+
+            filtered.forEach(room => {
+                const card = document.createElement('div');
+                card.className = "bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center";
+                card.innerHTML = `
+                    <div>
+                        <h4 class="font-bold text-amber-400 text-base">${room.name} ${room.pass ? '🔒' : '🌐'}</h4>
+                        <p class="text-xs text-slate-400">Chủ phòng: <span class="text-white">${room.host}</span> | Số người: ${room.players.length}/2</p>
+                    </div>
+                    <button onclick="joinRoom('${room.id}')" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg uppercase">
+                        Vào Trận
+                    </button>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        document.getElementById('input-search-room').addEventListener('input', (e) => {
+            renderRoomList(e.target.value);
+        });
+
+        // --- 3. Tạo & Vào Phòng ---
+        document.getElementById('btn-open-create-room').onclick = () => {
+            document.getElementById('input-room-name').value = "";
+            document.getElementById('input-room-pass').value = "";
+            document.getElementById('room-error-msg').innerText = "";
+            document.getElementById('screen-create-room').classList.add('active');
+        };
+
+        document.getElementById('btn-cancel-create').onclick = () => {
+            document.getElementById('screen-create-room').classList.remove('active');
+        };
+
+        document.getElementById('btn-confirm-create').onclick = () => {
+            const roomName = document.getElementById('input-room-name').value;
+            const roomPass = document.getElementById('input-room-pass').value;
+
+            socket.emit('create-room', { roomName, roomPass, username: gameState.username }, (res) => {
+                if (!res.success) {
+                    document.getElementById('room-error-msg').innerText = res.message;
+                } else {
+                    gameState.myRole = res.role;
+                    gameState.currentRoomId = res.roomId;
+                    document.getElementById('screen-create-room').classList.remove('active');
+                    alert("Đã tạo phòng thành công! Đang chờ đối thủ gia nhập...");
+                }
+            });
+        };
+
+        window.joinRoom = function(roomId) {
+            const room = gameState.rooms.find(r => r.id === roomId);
+            let enteredPass = "";
+            if (room && room.pass) {
+                enteredPass = prompt(`Phòng "${room.name}" yêu cầu mật khẩu:`);
+            }
+
+            socket.emit('join-room', { roomId, roomPass: enteredPass, username: gameState.username }, (res) => {
+                if (!res.success) {
+                    alert(res.message);
+                } else {
+                    gameState.myRole = res.role;
+                    gameState.currentRoomId = roomId;
+                }
+            });
+        };
+
+        // Khi 2 người tham gia -> Bắt đầu trận đấu
+        socket.on('match-start', (data) => {
+            switchScreen('screen-battle');
+            initBattleDeck();
+            initBabylonScene();
+            startEconomyLoop();
+        });
+
+        socket.on('opponent-left', () => {
+            alert("Đối thủ đã rời trận đấu! Bạn đã chiến thắng.");
+            location.reload();
+        });
+
+        // --- 4. Deck & Kinh Tế ---
+        function initBattleDeck() {
+            const container = document.getElementById('unit-deck-container');
+            container.innerHTML = "";
+
+            Object.keys(UNIT_CONFIGS).forEach(key => {
+                const u = UNIT_CONFIGS[key];
+                const card = document.createElement('div');
+                card.className = "bg-slate-950 border border-slate-700 hover:border-amber-400 p-2.5 rounded-xl flex flex-col items-center justify-between min-w-[95px] max-w-[105px] cursor-pointer transition transform hover:-translate-y-1";
+                card.innerHTML = `
+                    <span class="text-[11px] font-bold text-amber-300 text-center leading-tight h-8 flex items-center">${u.name}</span>
+                    <div class="my-1 text-xs font-black text-amber-400 bg-amber-950/50 px-2 py-0.5 rounded-full border border-amber-500/30">${u.cost} 💰</div>
+                    <span class="text-[9px] text-slate-400 text-center leading-3">${u.desc}</span>
+                `;
+                card.onclick = () => spawnUnit(key);
+                container.appendChild(card);
+            });
+        }
+
+        function startEconomyLoop() {
+            setInterval(() => {
+                gameState.gold += gameState.goldRate;
+                document.getElementById('hud-gold').innerText = gameState.gold + " 💰";
+            }, 1000);
+        }
+
+        // --- 5. Roll Buff Lotion ---
+        const lotions = [
+            { name: "Điên Cuồng", desc: "+2 mọi stat" },
+            { name: "Nhanh Nhẹn", desc: "+3 SPEED" },
+            { name: "Tốc Đánh", desc: "+3 ATK SPEED" },
+            { name: "Hồi Máu", desc: "Hồi 25% HP" },
+            { name: "Độc Dược", desc: "Đốt 25% máu" }
+        ];
+
+        const btnRoll = document.getElementById('btn-roll-lotion');
+        btnRoll.onclick = () => {
+            if (gameState.lotionCooldown > 0) return;
+
+            const chosen = lotions[Math.floor(Math.random() * lotions.length)];
+            document.getElementById('lotion-status').innerText = `Buff: ${chosen.name}`;
+            
+            socket.emit('roll-lotion', { roomId: gameState.currentRoomId, lotion: chosen });
+
+            gameState.lotionCooldown = 15;
+            btnRoll.disabled = true;
+
+            const timer = setInterval(() => {
+                gameState.lotionCooldown--;
+                btnRoll.innerText = `Cooldown (${gameState.lotionCooldown}s)`;
+                if (gameState.lotionCooldown <= 0) {
+                    clearInterval(timer);
+                    btnRoll.disabled = false;
+                    btnRoll.innerText = "🎲 Roll Buff (15s)";
+                    document.getElementById('lotion-status').innerText = "Sẵn sàng Roll";
+                }
+            }, 1000);
+        };
+
+        // --- 6. 3D Render & Socket Synchronization ---
+        let scene, engine;
+
+        function initBabylonScene() {
+            const canvas = document.getElementById("renderCanvas");
+            if (engine) engine.dispose();
+
+            engine = new BABYLON.Engine(canvas, true);
+            scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.06, 0.09, 0.15, 1);
+
+            // Xoay góc Camera theo vai trò người chơi (Player 1 nhìn từ dưới lên, Player 2 nhìn từ trên xuống)
+            const alpha = gameState.myRole === 'player1' ? -Math.PI / 2 : Math.PI / 2;
+            const camera = new BABYLON.ArcRotateCamera("Camera", alpha, Math.PI / 3.2, 55, new BABYLON.Vector3(0, 0, 0), scene);
+            camera.attachControl(canvas, true);
+
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.9;
+
+            // Bản đồ Chiến Thành
+            const ground = BABYLON.MeshBuilder.CreateBox("ground", { width: 30, height: 0.5, depth: 50 }, scene);
+            const groundMat = new BABYLON.StandardMaterial("groundMat", scene);
+            groundMat.diffuseColor = new BABYLON.Color3(0.18, 0.25, 0.22);
+            ground.material = groundMat;
+
+            // Sông phân cách giữa trận
+            const river = BABYLON.MeshBuilder.CreateBox("river", { width: 30, height: 0.6, depth: 4 }, scene);
+            river.position.y = 0.05;
+            const riverMat = new BABYLON.StandardMaterial("riverMat", scene);
+            riverMat.diffuseColor = new BABYLON.Color3(0.12, 0.45, 0.75);
+            river.material = riverMat;
+
+            // Tạo Trụ Base 2 phe
+            createTower(new BABYLON.Vector3(0, 1, 22), "Base 1 (Player 1)");
+            createTower(new BABYLON.Vector3(0, 1, -22), "Base 2 (Player 2)");
+
+            engine.runRenderLoop(() => scene.render());
+            window.addEventListener("resize", () => engine.resize());
+        }
+
+        function createTower(pos, name) {
+            const base = BABYLON.MeshBuilder.CreateBox(name, { width: 4, height: 3, depth: 4 }, scene);
+            base.position = pos;
+            const mat = new BABYLON.StandardMaterial(name + "Mat", scene);
+            mat.diffuseColor = pos.z > 0 ? new BABYLON.Color3(0.2, 0.5, 0.9) : new BABYLON.Color3(0.9, 0.2, 0.2);
+            base.material = mat;
+        }
+
+        // Thả quân local & gửi tín hiệu qua Socket
+        function spawnUnit(unitKey) {
+            const config = UNIT_CONFIGS[unitKey];
+            if (gameState.gold < config.cost) return alert("Không đủ vàng!");
+
+            if (unitKey === 'mine') {
+                if (gameState.minesCount >= gameState.maxMines) return alert("Đã đạt tối đa 5 mỏ vàng!");
+                gameState.minesCount++;
+                gameState.goldRate += 1;
+                document.getElementById('hud-gold-rate').innerText = `${gameState.goldRate} vàng/s (+ Mỏ)`;
+            }
+
+            gameState.gold -= config.cost;
+            document.getElementById('hud-gold').innerText = gameState.gold + " 💰";
+
+            // Xác định tọa độ xuất phát
+            const spawnZ = gameState.myRole === 'player1' ? 18 : -18;
+            const randomX = (Math.random() - 0.5) * 18;
+            const spawnPos = { x: randomX, y: 0.75, z: spawnZ };
+
+            // Render ở máy mình
+            render3DMesh(unitKey, spawnPos, false);
+
+            // Gửi sang đối thủ
+            socket.emit('spawn-unit', {
+                roomId: gameState.currentRoomId,
+                unitKey: unitKey,
+                position: spawnPos
+            });
+        }
+
+        // Nhận tín hiệu thả quân của đối thủ
+        socket.on('opponent-spawn-unit', ({ unitKey, position }) => {
+            render3DMesh(unitKey, position, true);
+        });
+
+        function render3DMesh(unitKey, pos, isEnemy) {
+            const mesh = BABYLON.MeshBuilder.CreateBox(unitKey, { width: 1.2, height: 1.5, depth: 1.2 }, scene);
+
+            // Đặt vị trí
+            mesh.position = new BABYLON.Vector3(pos.x, pos.y, pos.z);
+
+            const mat = new BABYLON.StandardMaterial(unitKey + "Mat", scene);
+            mat.diffuseColor = isEnemy ? new BABYLON.Color3(0.9, 0.2, 0.2) : new BABYLON.Color3(0.3, 0.85, 0.4);
+            mesh.material = mat;
+
+            // Hướng di chuyển
+            const moveDir = (pos.z > 0) ? -1 : 1;
+            scene.registerBeforeRender(() => {
+                if (unitKey !== 'mine' && unitKey !== 'general') {
+                    mesh.position.z += 0.03 * (UNIT_CONFIGS[unitKey].speed / 4) * moveDir;
+                    if (Math.abs(mesh.position.z) > 24) mesh.dispose();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
